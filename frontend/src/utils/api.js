@@ -4,7 +4,7 @@
 // can't override it.
 const BASE = import.meta.env.DEV
   ? "/api"
-  : "https://notebooklm-rag-implementaion.onrender.com";
+  : "https://notebooklm-rag-vtvj.onrender.com";
 
 export async function uploadDocument(file, onProgress) {
   const form = new FormData();
