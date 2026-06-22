@@ -1,202 +1,204 @@
-# NotebookLM Clone — RAG-Powered Document Chat
+# NotebookLM Clone — Multi-Document RAG Engine
 
-A full RAG (Retrieval-Augmented Generation) pipeline that lets you upload any PDF or text document and have a grounded conversation with it. Built with Node.js + Express (backend) and React + Vite (frontend), powered by Groq's LLaMA 3.3 70B.
-
----
-
-## Architecture
-
-```
-User uploads PDF/TXT
-        │
-        ▼
-[1. Ingestion]
-  pdf-parse → raw text
-        │
-        ▼
-[2. Chunking]  ← sliding window, 2000 chars, 400 char overlap (20%)
-  text → chunks[]  (each chunk tagged with index + char offsets)
-        │
-        ▼
-[3. Indexing]
-  TF-IDF vectors built per chunk + global IDF table stored in-memory
-        │
-        ▼
-[4. Retrieval]  (at query time)
-  query → TF-IDF vector → cosine similarity vs all chunks → top-k
-        │
-        ▼
-[5. Generation]
-  top-k chunks injected into system prompt → Groq LLaMA 3.3 70B → answer
-```
-
-### Chunking Strategy
-
-**Sliding window with overlap**
-- Fixed chunk size: ~2000 characters (~500 tokens)
-- Overlap: 400 characters (20%) between consecutive chunks
-- This ensures context isn't lost at chunk boundaries
-
-### Retrieval
-
-TF-IDF cosine similarity is used (no external embedding API needed):
-1. At index time: compute TF-IDF vectors for all chunks, store IDF table
-2. At query time: vectorise the query using the same IDF table, then rank all chunks by cosine similarity
-3. Return top-5 chunks (configurable)
+A functional, lightweight multi-document RAG (Retrieval-Augmented Generation) pipeline that lets users upload multiple PDF or text assets, select or deselect specific knowledge nodes, and perform comprehensive cross-document queries. Built with a Node.js/Express backend and a React/Vite frontend powered by Groq's LLaMA 3.3 70B.
 
 ---
 
-## Setup
+## Architecture Flow
+
+
+```
+
+User Uploads Multiple Files
+│
+▼
+[1. Ingestion Engine]
+pdf-parse → raw text strings per asset
+│
+▼
+[2. Sliding-Window Chunking]
+text → chunks[] (2000 chars, 400 char overlap, tagged with source file name metadata)
+│
+▼
+[3. Local Memory Indexing]
+In-memory TF-IDF vector matrix tables mapped per individual file node
+│
+▼
+[4. Multi-Select Control State] ← Frontend tracks active files (array of selectedDocIds)
+│
+▼
+[5. Parallel Retrieval & Global Ranking] (Query Time)
+query → Parallel TF-IDF similarity lookup across ALL active selections → Global score sort
+│
+▼
+[6. Synthesized Generation]
+Top-k chunks + cross-file metadata injected into System Prompt → LLaMA 3.3 70B → Answer
+
+```
+
+### Key Engineering Features
+- **Toggle Selection Logic:** Users can click to select/deselect specific files to dynamically shape the AI's contextual window on the fly.
+- **Zero-Dependency Frontend Queries:** The frontend relies purely on the browser's native `fetch` API, completely removing third-party networking packages (like `axios`) to eliminate build errors.
+- **Cross-Document Citations:** Retrieved text chunks are appended with source file attributes, forcing the LLM to output precise inline citations (e.g., `[Reference Block 1 | Document Source: "Ikigai.pdf"]`).
+
+---
+
+## Setup & Installation
 
 ### Prerequisites
 - Node.js 18+
-- A [Groq API key](https://console.groq.com) (free tier available)
+- A [Groq API Key](https://console.groq.com)
 
-### 1. Clone and install
-
+### 1. Project Ingestion
+Clone the repository and jump into the workspace:
 ```bash
-git clone <your-repo>
+git clone <your-repo-link>
 cd notebooklm
-npm run install:all
+
 ```
 
-### 2. Configure environment
+### 2. Dependency Setup
+
+Install dependencies inside both decoupled directories:
 
 ```bash
+# Setup Backend
 cd backend
-cp .env.example .env
+npm install
+
+# Setup Frontend
+cd ../frontend
+npm install
+
 ```
 
-Edit `.env` and add your Groq API key:
+### 3. Environment Variables
 
-```
-GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxxxx
+Inside the `backend/` directory, create a `.env` file:
+
+```env
 PORT=3001
+GROQ_API_KEY=gsk_your_actual_key_here
+USE_HYDE=true
+USE_JUDGE=true
+
 ```
 
-### 3. Run in development
+*(Note: Ensure your `.gitignore` contains `.env` to avoid pushing secrets to GitHub!)*
 
-Open two terminals:
+### 4. Running Locally
 
+Open two terminal windows to boot up your stack:
+
+* **Terminal 1 (Backend):**
 ```bash
-# Terminal 1 — backend
 cd backend && npm run dev
 
-# Terminal 2 — frontend
+```
+
+
+* **Terminal 2 (Frontend):**
+```bash
 cd frontend && npm run dev
+
 ```
 
-Visit **http://localhost:5173**
+
+
+Open **http://localhost:5173** in your web browser.
 
 ---
 
-## Deployment
+## Deployment Playbook
 
-### Backend (Railway / Render / Fly.io)
+### Backend Deployment (Render / Railway)
 
-1. Push to GitHub
-2. Create a new service pointing to `/backend`
-3. Set environment variable: `GROQ_API_KEY=your_key`
-4. Start command: `node src/index.js`
+1. Push your code repository to GitHub (ensuring `node_modules` and `.env` are excluded).
+2. Deploy a new **Web Service** tied to your repository.
+3. Configure the start runtime script: `node server.js`.
+4. Manually add your `GROQ_API_KEY` under the platform's Environment Variables panel.
 
-### Frontend (Vercel / Netlify)
+### Frontend Deployment (Vercel / Netlify)
 
-1. Set build directory to `/frontend`
-2. Build command: `npm run build`
-3. Output directory: `dist`
-4. Add environment variable to point the API proxy at your deployed backend URL
-
-**Update `vite.config.js` for production:**
-
-```js
-// Replace the proxy target with your deployed backend URL
-proxy: {
-  "/api": {
-    target: "https://your-backend.railway.app",
-    ...
-  }
-}
-```
-
-Or set `VITE_API_BASE` and update `src/utils/api.js` to use `import.meta.env.VITE_API_BASE`.
+1. Open `frontend/src/components/Chat.jsx`.
+2. Swap out the local endpoint string `"http://localhost:3001/documents/query"` with your live deployed backend URL link.
+3. Connect the frontend root to your hosting platform and trigger the production build pipeline.
 
 ---
 
-## Project Structure
+## Project Directory Map
 
 ```
 notebooklm/
 ├── backend/
-│   ├── src/
-│   │   ├── index.js      # Express server, routes
-│   │   ├── rag.js        # Chunking, TF-IDF indexing, retrieval
-│   │   └── store.js      # In-memory document store
-│   ├── .env.example
-│   └── package.json
+│   ├── server.js          # Express server with parallel multi-document query paths
+│   ├── rag.js             # Matrix text-chunking & custom TF-IDF retrieval math
+│   ├── store.js           # In-memory session binary store mapping
+│   ├── package.json
+│   └── .env
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── Chat.jsx      # Chat interface + source display
-│   │   │   ├── Sidebar.jsx   # Document list
-│   │   │   └── Uploader.jsx  # Drag-and-drop upload
-│   │   ├── utils/
-│   │   │   └── api.js        # API client
-│   │   ├── App.jsx
+│   │   │   ├── Chat.jsx      # Chat workspace built with native fetch streams
+│   │   │   ├── Sidebar.jsx   # Multi-checkbox document selector panel
+│   │   │   └── Uploader.jsx  # Drag-and-drop document upload interface
+│   │   ├── App.jsx           # Global multi-select array synchronization hook
 │   │   └── main.jsx
-│   ├── index.html
-│   ├── vite.config.js
-│   └── package.json
+│   ├── package.json
+│   └── vite.config.js
 └── README.md
+
 ```
 
 ---
 
-## API Reference
+## Unified Endpoint Interface
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check |
-| GET | `/documents` | List all uploaded documents |
-| POST | `/documents/upload` | Upload and ingest a document |
-| POST | `/documents/:docId/query` | Ask a question about a document |
-| DELETE | `/documents/:docId` | Remove a document |
+| --- | --- | --- |
+| GET | `/health` | Server status monitoring probe |
+| GET | `/documents` | Pulls all uploaded documents from memory |
+| POST | `/documents/upload` | Extracts, chunks, and indexes a single PDF/TXT node |
+| POST | `/documents/query` | Evaluates cross-document retrieval arrays simultaneously |
+| DELETE | `/documents/:docId` | Deletes a document from the session pool |
 
-### Query request body
+### Multi-Query Payload Example (`POST /documents/query`)
 
 ```json
 {
-  "question": "What is the main argument of this paper?",
+  "docIds": [
+    "8a5c32b9-7512-4c91-9e2e-fa45672a9120",
+    "2b9e45c1-1275-491c-8e3d-ba91245e3110"
+  ],
+  "question": "Compare the primary themes and list out the titles of all selected files.",
   "k": 5
 }
+
 ```
 
-### Query response
+### Success Response Payload
 
 ```json
 {
-  "answer": "According to Chunk 2, the main argument is...",
+  "answer": "According to [Reference Block 1 | Document Source: \"Ikigai.pdf\"], the core theme focuses on purpose, whereas...",
   "sources": [
     {
-      "chunkIndex": 1,
-      "score": 0.342,
-      "preview": "First 200 chars of the chunk...",
-      "startChar": 2000,
-      "endChar": 4000
+      "docName": "Ikigai.pdf",
+      "chunkIndex": 2,
+      "score": 0.481,
+      "preview": "Text fragment containing the relevant matches extracted during runtime..."
     }
   ],
   "model": "llama-3.3-70b-versatile",
-  "tokensUsed": 892
+  "tokensUsed": 1145
 }
+
 ```
 
----
 
-## Marking Scheme Coverage
 
-| Criterion | Implementation |
-|-----------|---------------|
-| GitHub Repository | ✅ This repo |
-| Live Project | ✅ Deploy backend + frontend as above |
-| RAG Pipeline | ✅ ingestion → chunking → TF-IDF indexing → cosine retrieval → Groq LLaMA generation |
-| Answer Quality | ✅ System prompt enforces document-only answers; chunks injected as context |
-| Code Quality | ✅ Modular, documented, clear separation of concerns |
+
+
+```
+
+```
